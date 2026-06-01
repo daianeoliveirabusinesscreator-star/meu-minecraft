@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CraftMobile - Mini Clone</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { background: #74b9ff; overflow: hidden; font-family: sans-serif; }
+        #canvas { display: block; margin: 0 auto; background: #74b9ff; }
+        #controles { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; width: 90%; justify-content: space-between; }
+        .btn-grupo { display: flex; gap: 10px; }
+        .btn { width: 60px; height: 60px; background: rgba(0,0,0,0.6); border: 2px solid #fff; border-radius: 10px; color: white; font-weight: bold; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+        .btn:active { background: rgba(255,255,255,0.4); }
+    </style>
+</head>
+<body>
+
+    <canvas id="canvas"></canvas>
+
+    <div id="controles">
+        <div class="btn-grupo">
+            <div class="btn" id="btn-esquerda">◀</div>
+            <div class="btn" id="btn-direita">▶</div>
+        </div>
+        <div class="btn" id="btn-pular">▲</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Ajusta tamanho da tela
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const TAMANHO_BLOCO = 40;
+        const blocos = [];
+
+        // Estrutura do Jogador (Doutora Daiane)
+        const jogador = {
+            x: 100, y: 100,
+            largura: 30, altura: 50,
+            velX: 0, velY: 0,
+            velocidade: 4, gravidade: 0.5,
+            pulo: -10, noChao: false
+        };
+
+        // Gerar o mundo de blocos
+        const colunas = Math.ceil(canvas.width / TAMANHO_BLOCO);
+        const linhas = Math.ceil(canvas.height / TAMANHO_BLOCO);
+        const linhaDoChao = Math.floor(linhas / 2);
+
+        for (let c = 0; c < colunas; c++) {
+            for (let l = linhaDoChao; l < linhas; l++) {
+                let tipo = 'terra';
+                if (l === linhaDoChao) tipo = 'grama';
+                if (l > linhaDoChao + 3) tipo = 'pedra';
+                
+                blocos.push({ x: c * TAMANHO_BLOCO, y: l * TAMANHO_BLOCO, tipo: tipo });
+            }
+        }
+
+        // Controles de toque
+        let movendoEsquerda = false;
+        let movendoDireita = false;
+
+        document.getElementById('btn-esquerda').addEventListener('touchstart', () => movendoEsquerda = true);
+        document.getElementById('btn-esquerda').addEventListener('touchend', () => movendoEsquerda = false);
+        document.getElementById('btn-direita').addEventListener('touchstart', () => movendoDireita = true);
+        document.getElementById('btn-direita').addEventListener('touchend', () => movendoDireita = false);
+        document.getElementById('btn-pular').addEventListener('touchstart', () => {
+            if (jogador.noChao) { jogador.velY = jogador.pulo; jogador.noChao = false; }
+        });
+
+        // Mineração: Quebrar blocos ao tocar neles
+        canvas.addEventListener('touchstart', (e) => {
+            const toqueX = e.touches[0].clientX;
+            const toqueY = e.touches[0].clientY;
+            
+            // Filtra e remove o bloco clicado
+            for (let i = blocos.length - 1; i >= 0; i--) {
+                const b = blocos[i];
+                if (toqueX >= b.x && toqueX <= b.x + TAMANHO_BLOCO && toqueY >= b.y && toqueY <= b.y + TAMANHO_BLOCO) {
+                    blocos.splice(i, 1); // Quebra o bloco
+                    break;
+                }
+            }
+        });
+
+        // Atualização da física e mecânicas
+        function atualizar() {
+            if (movendoEsquerda) jogador.velX = -jogador.velocidade;
+            else if (movendoDireita) jogador.velX = jogador.velocidade;
+            else jogador.velX = 0;
+
+            jogador.velY += jogador.gravidade;
+            jogador.x += jogador.velX;
+            jogador.y += jogador.velY;
+            jogador.noChao = false;
+
+            // Colisão com os blocos
+            for (let b of blocos) {
+                if (jogador.x < b.x + TAMANHO_BLOCO && jogador.x + jogador.largura > b.x &&
+                    jogador.y < b.y + TAMANHO_BLOCO && jogador.y + jogador.altura > b.y) {
+                    
+                    // Colisão por cima (pousar no bloco)
+                    if (jogador.velY > 0 && jogador.y + jogador.altura - jogador.velY <= b.y) {
+                        jogador.y = b.y - jogador.altura;
+                        jogador.velY = 0;
+                        jogador.noChao = true;
+                    }
+                }
+            }
+        }
+
+        // Desenhar elementos na tela
+        function desenhar() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Desenha o Sol
+            ctx.fillStyle = '#fde047';
+            ctx.beginPath();
+            ctx.arc(canvas.width - 80, 80, 40, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Desenha os blocos do mapa
+            for (let b of blocos) {
+                if (b.tipo === 'grama') ctx.fillStyle = '#22c55e';
+                else if (b.tipo === 'terra') ctx.fillStyle = '#854d0e';
+                else ctx.fillStyle = '#64748b';
+                
+                ctx.fillRect(b.x, b.y, TAMANHO_BLOCO - 1, TAMANHO_BLOCO - 1);
+            }
+
+            // Desenha o jogador (Estilo Minimalista)
+            ctx.fillStyle = '#3b82f6'; // Azul
+            ctx.fillRect(jogador.x, jogador.y, jogador.largura, jogador.altura);
+        }
+
+        function loop() {
+            atualizar();
+            desenhar();
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>

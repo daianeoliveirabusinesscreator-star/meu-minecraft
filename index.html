@@ -2,23 +2,192 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meu Primeiro Bloco</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Minecraft 3D Mobile</title>
     <style>
-        body { margin: 0; background: #87CEEB; text-align: center; font-family: sans-serif; padding-top: 50px; }
-        h1 { color: #fff; text-shadow: 2px 2px #000; }
-        canvas { background: #556B2F; display: block; margin: 20px auto; border: 4px solid #fff; box-shadow: 0px 4px 10px rgba(0,0,0,0.3); }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #joystick-container { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; touch-action: none; }
+        #joystick-knob { width: 50px; height: 50px; background: rgba(255,255,255,0.5); border-radius: 50%; position: absolute; }
+        #btn-jump { position: absolute; bottom: 60px; right: 40px; width: 80px; height: 80px; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; color: #fff; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        #btn-jump:active { background: rgba(255,255,255,0.4); }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; background: white; transform: translate(-50%, -50%); border-radius: 50%; mix-blend-mode: difference; pointer-events: none; }
     </style>
+    <!-- Importando a biblioteca 3D Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-    <h1>Meu Código Inicial</h1>
-    <canvas id="quadrado" width="200" height="200"></canvas>
+
+    <div id="crosshair"></div>
+    <div id="joystick-container"><div id="joystick-knob"></div></div>
+    <div id="btn-jump">PULO</div>
+
     <script>
-        const canvas = document.getElementById('quadrado');
-        const ctx = canvas.getContext('2d');
-        // Desenha o bloco de terra do Minecraft (Marrom)
-        ctx.fillStyle = '#8B4513';
-        ctx.fillRect(50, 50, 100, 100);
+        // 1. Configuração Básica do Cenário 3D
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Céu Azul
+        scene.fog = new THREE.FogExp2(0x87CEEB, 0.03);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // 2. Iluminação do Mundo
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight.position.set(20, 40, 20);
+        scene.add(directionalLight);
+
+        // 3. Criação dos Blocos (Grama e Terra)
+        const textureLoader = new THREE.TextureLoader();
+        
+        // Cores sólidas simulando texturas clássicas do Minecraft
+        const materials = [
+            new THREE.MeshLambertMaterial({ color: 0x558A2F }), // Lados (Grama/Terra)
+            new THREE.MeshLambertMaterial({ color: 0x558A2F }), 
+            new THREE.MeshLambertMaterial({ color: 0x7CB342 }), // Topo (Verde Grama)
+            new THREE.MeshLambertMaterial({ color: 0x8D6E63 }), // Baixo (Terra)
+            new THREE.MeshLambertMaterial({ color: 0x558A2F }), 
+            new THREE.MeshLambertMaterial({ color: 0x558A2F })
+        ];
+
+        const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+        // Gerar um pequeno mapa de blocos 3D (Mundo)
+        const worldSize = 15;
+        for (let x = -worldSize; x < worldSize; x++) {
+            for (let z = -worldSize; z < worldSize; z++) {
+                // Camada de superfície (Grama)
+                const block = new THREE.Mesh(blockGeometry, materials);
+                block.position.set(x, 0, z);
+                scene.add(block);
+
+                // Camada de baixo (Terra)
+                const dirtBlock = new THREE.Mesh(blockGeometry, new THREE.MeshLambertMaterial({ color: 0x8D6E63 }));
+                dirtBlock.position.set(x, -1, z);
+                scene.add(dirtBlock);
+            }
+        }
+
+        // Posicionar a câmera na altura dos olhos do personagem
+        camera.position.set(0, 1.8, 5);
+
+        // 4. Sistema de Movimentação e Física
+        const move = { forward: 0, side: 0 };
+        let velocityY = 0;
+        let isJumping = false;
+        const speed = 0.07;
+        const gravity = 0.015;
+
+        // Controle Touch (Olhar ao redor arrastando o dedo na tela)
+        let touchStartX = 0, touchStartY = 0;
+        let yaw = 0, pitch = 0;
+
+        window.addEventListener('touchstart', (e) => {
+            if(e.target.id !== 'joystick-container' && e.target.id !== 'joystick-knob' && e.target.id !== 'btn-jump') {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if(e.target.id !== 'joystick-container' && e.target.id !== 'joystick-knob' && e.target.id !== 'btn-jump') {
+                const deltaX = e.touches[0].clientX - touchStartX;
+                const deltaY = e.touches[0].clientY - touchStartY;
+                
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+
+                yaw -= deltaX * 0.005;
+                pitch -= deltaY * 0.005;
+                pitch = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, pitch));
+
+                camera.rotation.set(0, 0, 0);
+                camera.rotation.y = yaw;
+                camera.rotation.x = pitch;
+            }
+        }, { passive: false });
+
+        // Joystick Virtual (Andar)
+        const joystick = document.getElementById('joystick-container');
+        const knob = document.getElementById('joystick-knob');
+        let joyStartX = 0, joyStartY = 0;
+
+        joystick.addEventListener('touchstart', (e) => {
+            joyStartX = e.touches[0].clientX;
+            joyStartY = e.touches[0].clientY;
+        });
+
+        joystick.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const deltaX = e.touches[0].clientX - joyStartX;
+            const deltaY = e.touches[0].clientY - joyStartY;
+            const dist = Math.min(Math.sqrt(deltaX*deltaX + deltaY*deltaY), 40);
+            const angle = Math.atan2(deltaY, deltaX);
+
+            const moveX = Math.cos(angle) * dist;
+            const moveY = Math.sin(angle) * dist;
+
+            knob.style.transform = `translate(${moveX}px, ${moveY}px)`;
+
+            move.forward = -Math.sin(angle) * (dist / 40);
+            move.side = Math.cos(angle) * (dist / 40);
+        });
+
+        joystick.addEventListener('touchend', () => {
+            knob.style.transform = 'translate(0px, 0px)';
+            move.forward = 0;
+            move.side = 0;
+        });
+
+        // Botão de Pulo
+        document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!isJumping) {
+                velocityY = 0.25;
+                isJumping = true;
+            }
+        });
+
+        // 5. Loop de Renderização (Atualização Contínua)
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Movimentação em relação à direção da câmera
+            const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            const sideVector = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            
+            forwardVector.y = 0; forwardVector.normalize();
+            sideVector.y = 0; sideVector.normalize();
+
+            camera.position.addScaledVector(forwardVector, move.forward * speed);
+            camera.position.addScaledVector(sideVector, move.side * speed);
+
+            // Gravidade e Pulo
+            camera.position.y += velocityY;
+            velocityY -= gravity;
+
+            // Colisão simples com o chão (altura fixa y = 1.8 sobre o bloco)
+            if (camera.position.y <= 1.8) {
+                camera.position.y = 1.8;
+                velocityY = 0;
+                isJumping = false;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Ajuste de tela caso mude a orientação do celular
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
     </script>
 </body>
 </html>
